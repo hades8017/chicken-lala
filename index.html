@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>奇雞連連 Gobblet Deluxe</title>
+    <!-- 引入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+
+        :root {
+            --p1-color: #3b82f6;
+            --p1-dark: #1e40af;
+            --p2-color: #ef4444;
+            --p2-dark: #b91c1c;
+            --bg-color: #f8fafc;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            font-family: 'Noto Sans TC', sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            overflow: hidden;
+            margin: 0;
+        }
+
+        .game-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1rem;
+            max-width: 500px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+
+        .board-wrapper {
+            background: #cbd5e1;
+            padding: 12px;
+            border-radius: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), inset 0 -4px 4px rgba(0,0,0,0.1);
+        }
+
+        .board-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 10px;
+            aspect-ratio: 1 / 1;
+        }
+
+        .cell {
+            background-color: #f1f5f9;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+            min-height: 80px;
+        }
+
+        .piece {
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            filter: drop-shadow(0 4px 3px rgba(0,0,0,0.2));
+            pointer-events: none;
+            width: 90%;
+            height: 90%;
+        }
+
+        .piece.small { width: 45%; height: 45%; }
+        .piece.medium { width: 70%; height: 70%; }
+        .piece.large { width: 95%; height: 95%; }
+
+        .piece.selected {
+            transform: scale(1.1) translateY(-10px);
+            filter: drop-shadow(0 15px 12px rgba(0,0,0,0.3));
+            z-index: 50;
+        }
+
+        .hand-area {
+            background: white;
+            padding: 0.5rem;
+            border-radius: 20px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            border: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .hand-area.active { border-color: currentColor; background: #fff; }
+
+        .hand-slot {
+            position: relative;
+            width: 60px;
+            height: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .count-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            background: #334155;
+            color: white;
+            font-size: 10px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid white;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(5px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.show { display: flex; }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- P2 頂部 -->
+        <div id="p2-hand-container" class="hand-area text-red-500">
+            <div class="font-black text-lg px-2">P2</div>
+            <div id="hand-2" class="flex gap-1 flex-1 justify-center"></div>
+        </div>
+
+        <div class="text-center">
+            <h1 class="text-xl font-black text-slate-800">奇雞連連</h1>
+            <p id="turn-info" class="text-xs font-bold text-slate-500 uppercase mt-1">載入中...</p>
+        </div>
+
+        <!-- 棋盤 -->
+        <div class="board-wrapper">
+            <div id="board" class="board-grid">
+                <div class="cell" data-idx="0"></div>
+                <div class="cell" data-idx="1"></div>
+                <div class="cell" data-idx="2"></div>
+                <div class="cell" data-idx="3"></div>
+                <div class="cell" data-idx="4"></div>
+                <div class="cell" data-idx="5"></div>
+                <div class="cell" data-idx="6"></div>
+                <div class="cell" data-idx="7"></div>
+                <div class="cell" data-idx="8"></div>
+            </div>
+        </div>
+
+        <!-- P1 底部 -->
+        <div id="p1-hand-container" class="hand-area text-blue-500 active">
+            <div class="font-black text-lg px-2">P1</div>
+            <div id="hand-1" class="flex gap-1 flex-1 justify-center"></div>
+        </div>
+
+        <button onclick="resetGame()" class="w-full bg-slate-200 text-slate-700 font-bold py-2 rounded-lg text-sm">重置</button>
+    </div>
+
+    <div id="win-modal" class="modal">
+        <div class="bg-white p-8 rounded-3xl text-center space-y-4 max-w-xs w-full mx-4">
+            <div id="win-emoji" class="text-5xl">🏆</div>
+            <h2 id="win-title" class="text-2xl font-black">恭喜獲勝！</h2>
+            <button onclick="resetGame()" class="w-full bg-blue-600 text-white py-3 rounded-xl font-bold">再玩一次</button>
+        </div>
+    </div>
+
+    <script>
+        const PIECE_TYPES = {
+            large: { size: 3, class: 'large' },
+            medium: { size: 2, class: 'medium' },
+            small: { size: 1, class: 'small' }
+        };
+
+        let state = {
+            board: Array(9).fill().map(() => []),
+            hands: { 1: { large: 2, medium: 2, small: 2 }, 2: { large: 2, medium: 2, small: 2 } },
+            currentPlayer: 1,
+            selected: null,
+            isGameOver: false
+        };
+
+        function createPieceSVG(player, type) {
+            const color = player === 1 ? 'var(--p1-color)' : 'var(--p2-color)';
+            const sizeClass = PIECE_TYPES[type].class;
+            return `
+                <svg viewBox="0 0 100 100" class="piece ${sizeClass} ${state.selected && state.selected.type === type && state.selected.pId === player ? 'selected' : ''}">
+                    <circle cx="50" cy="85" rx="30" ry="8" fill="rgba(0,0,0,0.1)"/>
+                    <path d="M25 85 C 25 20, 75 20, 75 85 Z" fill="${color}"/>
+                    <circle cx="40" cy="45" r="5" fill="white"/><circle cx="60" cy="45" r="5" fill="white"/>
+                    <circle cx="40" cy="45" r="2.5" fill="black"/><circle cx="60" cy="45" r="2.5" fill="black"/>
+                    <path d="M45 60 Q50 68 55 60" fill="none" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/>
+                </svg>
+            `;
+        }
+
+        function render() {
+            try {
+                [1, 2].forEach(pId => {
+                    const el = document.getElementById(`hand-${pId}`);
+                    if (!el) return;
+                    el.innerHTML = '';
+                    ['large', 'medium', 'small'].forEach(type => {
+                        const count = state.hands[pId][type];
+                        if (count <= 0) return;
+                        const slot = document.createElement('div');
+                        slot.className = 'hand-slot';
+                        slot.innerHTML = createPieceSVG(pId, type) + `<div class="count-badge">${count}</div>`;
+                        if (!state.isGameOver && state.currentPlayer === pId) {
+                            slot.onclick = () => {
+                                state.selected = (state.selected && state.selected.type === type) ? null : { source: 'hand', pId, type };
+                                render();
+                            };
+                        }
+                        el.appendChild(slot);
+                    });
+                });
+
+                document.querySelectorAll('.cell').forEach((cell, idx) => {
+                    const stack = state.board[idx];
+                    cell.innerHTML = '';
+                    if (stack.length > 0) {
+                        const top = stack[stack.length - 1];
+                        cell.innerHTML = createPieceSVG(top.player, top.type);
+                    }
+                    cell.onclick = () => handleCellAction(idx);
+                });
+
+                document.getElementById('turn-info').innerText = `玩家 ${state.currentPlayer} 行動中`;
+                document.getElementById('p1-hand-container').classList.toggle('active', state.currentPlayer === 1);
+                document.getElementById('p2-hand-container').classList.toggle('active', state.currentPlayer === 2);
+            } catch (e) {
+                console.error("Render error:", e);
+            }
+        }
+
+        function handleCellAction(idx) {
+            if (!state.selected || state.isGameOver) return;
+            const stack = state.board[idx];
+            const top = stack.length > 0 ? stack[stack.length - 1] : null;
+            const movingSize = PIECE_TYPES[state.selected.type].size;
+
+            if (top && movingSize <= PIECE_TYPES[top.type].size) return;
+
+            if (state.selected.source === 'hand') {
+                state.hands[state.selected.pId][state.selected.type]--;
+                state.board[idx].push({ player: state.selected.pId, type: state.selected.type });
+                state.selected = null;
+                if (!checkWin()) state.currentPlayer = state.currentPlayer === 1 ? 2 : 1;
+                render();
+            }
+        }
+
+        function checkWin() {
+            const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+            for (let line of lines) {
+                const pieces = line.map(i => state.board[i].length > 0 ? state.board[i][state.board[i].length-1].player : null);
+                if (pieces[0] && pieces[0] === pieces[1] && pieces[1] === pieces[2]) {
+                    state.isGameOver = true;
+                    document.getElementById('win-title').innerText = `玩家 ${pieces[0]} 獲勝！`;
+                    document.getElementById('win-modal').classList.add('show');
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        function resetGame() {
+            state = {
+                board: Array(9).fill().map(() => []),
+                hands: { 1: { large: 2, medium: 2, small: 2 }, 2: { large: 2, medium: 2, small: 2 } },
+                currentPlayer: 1, selected: null, isGameOver: false
+            };
+            document.getElementById('win-modal').classList.remove('show');
+            render();
+        }
+
+        // 使用更保險的啟動方式
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', render);
+        } else {
+            render();
+        }
+    </script>
+</body>
+</html>
