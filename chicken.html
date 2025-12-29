@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>奇雞連連 Gobblet Deluxe</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
+
+        :root {
+            --p1-color: #3b82f6;
+            --p1-dark: #1e40af;
+            --p2-color: #ef4444;
+            --p2-dark: #b91c1c;
+            --bg-color: #f8fafc;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            font-family: 'Noto Sans TC', sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        .game-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 1rem;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* 棋盤樣式 */
+        .board-wrapper {
+            background: #cbd5e1;
+            padding: 12px;
+            border-radius: 24px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), inset 0 -4px 4px rgba(0,0,0,0.1);
+        }
+
+        .board-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(3, 1fr);
+            gap: 10px;
+            aspect-ratio: 1 / 1;
+        }
+
+        .cell {
+            background-color: #f1f5f9;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+
+        .cell:active { transform: scale(0.95); }
+
+        /* 合法目標特效 */
+        .cell.valid-target::after {
+            content: '';
+            position: absolute;
+            inset: 4px;
+            border: 3px dashed #10b981;
+            border-radius: 12px;
+            opacity: 0.6;
+            animation: rotate 8s linear infinite;
+        }
+
+        @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+        /* 棋子動畫與比例 */
+        .piece {
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            filter: drop-shadow(0 4px 3px rgba(0,0,0,0.2));
+            pointer-events: none;
+        }
+
+        .piece.selected {
+            transform: scale(1.15) translateY(-20px);
+            filter: drop-shadow(0 15px 12px rgba(0,0,0,0.3));
+            z-index: 50;
+        }
+
+        /* 明確的大小分級 */
+        .piece.small { width: 45%; height: 45%; }
+        .piece.medium { width: 72%; height: 72%; }
+        .piece.large { width: 95%; height: 95%; }
+
+        /* 手牌區域 */
+        .hand-area {
+            background: white;
+            padding: 0.75rem;
+            border-radius: 20px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            border: 2px solid transparent;
+        }
+
+        .hand-area.active { border-color: currentColor; box-shadow: 0 0 15px rgba(0,0,0,0.1); }
+
+        .hand-slot {
+            position: relative;
+            width: 64px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        .count-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            background: #334155;
+            color: white;
+            font-size: 11px;
+            font-weight: 900;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid white;
+        }
+
+        /* 獲勝閃爍 */
+        @keyframes winPulse {
+            0%, 100% { transform: scale(1); filter: brightness(1.1); }
+            50% { transform: scale(1.08); filter: brightness(1.3); }
+        }
+        .winning-cell .piece { animation: winPulse 0.6s infinite ease-in-out; }
+
+        /* 彈窗 */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+        }
+        .modal.show { display: flex; }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <!-- 玩家 2 (頂部) -->
+        <div id="p2-hand-container" class="hand-area text-red-500">
+            <div class="font-black text-xl px-2">P2</div>
+            <div id="hand-2" class="flex gap-2 flex-1 justify-center"></div>
+        </div>
+
+        <!-- 遊戲狀態 -->
+        <div class="text-center">
+            <h1 class="text-2xl font-black text-slate-800">奇雞連連</h1>
+            <p id="turn-info" class="text-sm font-bold text-slate-500 uppercase tracking-tighter mt-1">Player 1's Turn</p>
+        </div>
+
+        <!-- 棋盤 -->
+        <div class="board-wrapper">
+            <div id="board" class="board-grid">
+                <!-- 由 JS 填充 -->
+                <div class="cell" data-idx="0"></div>
+                <div class="cell" data-idx="1"></div>
+                <div class="cell" data-idx="2"></div>
+                <div class="cell" data-idx="3"></div>
+                <div class="cell" data-idx="4"></div>
+                <div class="cell" data-idx="5"></div>
+                <div class="cell" data-idx="6"></div>
+                <div class="cell" data-idx="7"></div>
+                <div class="cell" data-idx="8"></div>
+            </div>
+        </div>
+
+        <!-- 玩家 1 (底部) -->
+        <div id="p1-hand-container" class="hand-area text-blue-500 active">
+            <div class="font-black text-xl px-2">P1</div>
+            <div id="hand-1" class="flex gap-2 flex-1 justify-center"></div>
+        </div>
+
+        <!-- 控制鈕 -->
+        <div class="flex gap-2">
+            <button onclick="resetGame()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-black py-3 rounded-xl transition">重置遊戲</button>
+        </div>
+    </div>
+
+    <!-- 勝利視窗 -->
+    <div id="win-modal" class="modal">
+        <div class="bg-white p-8 rounded-3xl shadow-2xl text-center w-full max-w-xs space-y-4">
+            <div id="win-emoji" class="text-6xl">🏆</div>
+            <h2 id="win-title" class="text-3xl font-black">恭喜獲勝！</h2>
+            <p id="win-msg" class="text-slate-600 font-bold"></p>
+            <button onclick="resetGame()" class="w-full bg-blue-600 text-white py-4 rounded-2xl font-black text-lg shadow-lg hover:bg-blue-700 active:scale-95 transition">再玩一局</button>
+        </div>
+    </div>
+
+    <script>
+        const PIECE_TYPES = {
+            large: { size: 3, class: 'large', label: '大' },
+            medium: { size: 2, class: 'medium', label: '中' },
+            small: { size: 1, class: 'small', label: '小' }
+        };
+
+        let state = {
+            board: Array(9).fill().map(() => []),
+            hands: {
+                1: { large: 2, medium: 2, small: 2 },
+                2: { large: 2, medium: 2, small: 2 }
+            },
+            currentPlayer: 1,
+            selected: null, // { source: 'hand'|'board', pId, type, boardIdx }
+            isGameOver: false
+        };
+
+        function createPieceSVG(player, type) {
+            const color = player === 1 ? 'var(--p1-color)' : 'var(--p2-color)';
+            const dark = player === 1 ? 'var(--p1-dark)' : 'var(--p2-dark)';
+            const sizeClass = PIECE_TYPES[type].class;
+            
+            let decoration = '';
+            if (type === 'large') {
+                // 皇冠
+                decoration = `<path d="M30 25 L40 12 L50 25 L60 12 L70 25" fill="none" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/><circle cx="40" cy="12" r="3" fill="#fbbf24"/><circle cx="60" cy="12" r="3" fill="#fbbf24"/>`;
+            } else if (type === 'medium') {
+                // 領結
+                decoration = `<path d="M42 65 L58 75 L58 55 Z M58 65 L42 75 L42 55 Z" fill="${dark}"/>`;
+            } else {
+                // 腮紅
+                decoration = `<circle cx="35" cy="52" r="5" fill="#fca5a5" opacity="0.6"/><circle cx="65" cy="52" r="5" fill="#fca5a5" opacity="0.6"/>`;
+            }
+
+            return `
+                <svg viewBox="0 0 100 100" class="piece ${sizeClass}">
+                    <ellipse cx="50" cy="85" rx="35" ry="10" fill="rgba(0,0,0,0.1)"/>
+                    <path d="M20 85 C 20 15, 80 15, 80 85 Z" fill="${color}"/>
+                    ${decoration}
+                    <circle cx="40" cy="42" r="6" fill="white"/><circle cx="60" cy="42" r="6" fill="white"/>
+                    <circle cx="40" cy="42" r="3" fill="black"/><circle cx="60" cy="42" r="3" fill="black"/>
+                    <path d="M45 58 Q50 68 55 58" fill="none" stroke="#fbbf24" stroke-width="4" stroke-linecap="round"/>
+                </svg>
+            `;
+        }
+
+        function render() {
+            // 渲染手牌
+            [1, 2].forEach(pId => {
+                const el = document.getElementById(`hand-${pId}`);
+                el.innerHTML = '';
+                ['large', 'medium', 'small'].forEach(type => {
+                    const count = state.hands[pId][type];
+                    if (count <= 0) return;
+                    
+                    const slot = document.createElement('div');
+                    slot.className = 'hand-slot';
+                    slot.innerHTML = createPieceSVG(pId, type) + `<div class="count-badge">${count}</div>`;
+                    
+                    const svg = slot.querySelector('svg');
+                    if (!state.isGameOver && state.currentPlayer === pId) {
+                        slot.onclick = () => selectFromHand(pId, type);
+                    }
+                    if (state.selected && state.selected.source === 'hand' && state.selected.pId === pId && state.selected.type === type) {
+                        svg.classList.add('selected');
+                    }
+                    el.appendChild(slot);
+                });
+            });
+
+            // 渲染棋盤
+            document.querySelectorAll('.cell').forEach((cell, idx) => {
+                const stack = state.board[idx];
+                cell.innerHTML = '';
+                cell.classList.remove('winning-cell', 'valid-target');
+
+                if (stack.length > 0) {
+                    const top = stack[stack.length - 1];
+                    cell.innerHTML = createPieceSVG(top.player, top.type);
+                    const svg = cell.querySelector('svg');
+
+                    if (!state.isGameOver && state.currentPlayer === top.player) {
+                        cell.onclick = (e) => {
+                            if (state.selected && state.selected.source !== 'board') {
+                                handleCellAction(idx);
+                            } else {
+                                selectFromBoard(idx);
+                            }
+                        };
+                    } else {
+                        cell.onclick = () => handleCellAction(idx);
+                    }
+
+                    if (state.selected && state.selected.source === 'board' && state.selected.boardIdx === idx) {
+                        svg.classList.add('selected');
+                    }
+                } else {
+                    cell.onclick = () => handleCellAction(idx);
+                }
+
+                // 顯示合法落點提示
+                if (state.selected) {
+                    const movingInfo = getSelectedInfo();
+                    const topOnTarget = stack.length > 0 ? stack[stack.length - 1] : null;
+                    if (!topOnTarget || movingInfo.size > PIECE_TYPES[topOnTarget.type].size) {
+                        cell.classList.add('valid-target');
+                    }
+                }
+            });
+
+            // 更新 UI 狀態
+            document.getElementById('turn-info').innerText = state.selected ? '請選擇放置位置' : `玩家 ${state.currentPlayer} 行動中`;
+            document.getElementById('p1-hand-container').classList.toggle('active', state.currentPlayer === 1);
+            document.getElementById('p2-hand-container').classList.toggle('active', state.currentPlayer === 2);
+        }
+
+        function getSelectedInfo() {
+            if (state.selected.source === 'hand') return PIECE_TYPES[state.selected.type];
+            const stack = state.board[state.selected.boardIdx];
+            return PIECE_TYPES[stack[stack.length - 1].type];
+        }
+
+        function selectFromHand(pId, type) {
+            if (state.selected && state.selected.source === 'hand' && state.selected.type === type) {
+                state.selected = null;
+            } else {
+                state.selected = { source: 'hand', pId, type };
+            }
+            render();
+        }
+
+        function selectFromBoard(idx) {
+            if (state.selected && state.selected.source === 'board' && state.selected.boardIdx === idx) {
+                state.selected = null;
+            } else {
+                state.selected = { source: 'board', boardIdx: idx };
+            }
+            render();
+        }
+
+        function handleCellAction(idx) {
+            if (!state.selected || state.isGameOver) return;
+
+            const targetStack = state.board[idx];
+            const movingInfo = getSelectedInfo();
+            const topOnTarget = targetStack.length > 0 ? targetStack[targetStack.length - 1] : null;
+
+            // 檢查大吃小規則
+            if (topOnTarget && movingInfo.size <= PIECE_TYPES[topOnTarget.type].size) {
+                state.selected = null; // 取消選取
+                render();
+                return;
+            }
+
+            if (state.selected.source === 'hand') {
+                state.hands[state.selected.pId][state.selected.type]--;
+                state.board[idx].push({ player: state.selected.pId, type: state.selected.type });
+            } else {
+                if (state.selected.boardIdx === idx) {
+                    state.selected = null;
+                    render();
+                    return;
+                }
+                const piece = state.board[state.selected.boardIdx].pop();
+                state.board[idx].push(piece);
+            }
+
+            state.selected = null;
+            if (checkWin()) return;
+
+            state.currentPlayer = state.currentPlayer === 1 ? 2 : 1;
+            render();
+        }
+
+        function checkWin() {
+            const lines = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+            const getTop = (i) => state.board[i].length > 0 ? state.board[i][state.board[i].length-1].player : null;
+
+            let winners = new Set();
+            let winnerLine = null;
+
+            lines.forEach(line => {
+                const p = line.map(getTop);
+                if (p[0] && p[0] === p[1] && p[1] === p[2]) {
+                    winners.add(p[0]);
+                    winnerLine = line;
+                }
+            });
+
+            if (winners.size > 0) {
+                state.isGameOver = true;
+                const actualWinner = winners.has(state.currentPlayer) ? state.currentPlayer : [...winners][0];
+                render();
+                
+                if (winnerLine) {
+                    winnerLine.forEach(idx => document.querySelector(`.cell[data-idx="${idx}"]`).classList.add('winning-cell'));
+                }
+
+                setTimeout(() => {
+                    document.getElementById('win-title').innerText = `玩家 ${actualWinner} 獲勝！`;
+                    document.getElementById('win-msg').innerText = actualWinner === 1 ? "藍色雞戰士勇奪冠軍！" : "紅色雞皇統治了棋盤！";
+                    document.getElementById('win-emoji').innerText = actualWinner === 1 ? "🔵🏆" : "🔴🏆";
+                    document.getElementById('win-modal').classList.add('show');
+                }, 600);
+                return true;
+            }
+            return false;
+        }
+
+        function resetGame() {
+            state = {
+                board: Array(9).fill().map(() => []),
+                hands: {
+                    1: { large: 2, medium: 2, small: 2 },
+                    2: { large: 2, medium: 2, small: 2 }
+                },
+                currentPlayer: 1,
+                selected: null,
+                isGameOver: false
+            };
+            document.getElementById('win-modal').classList.remove('show');
+            render();
+        }
+
+        window.onload = render;
+    </script>
+</body>
+</html>
